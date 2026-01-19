@@ -5,12 +5,26 @@ import tempfile
 import requests
 import time
 
-# Simplified imports - let Streamlit handle dependencies
-try:
-    from moviepy.editor import VideoFileClip, AudioFileClip
-except ImportError as e:
-    st.error(f"Please wait, installing dependencies... Error: {e}")
+# Show loading message while dependencies install
+@st.cache_resource
+def check_dependencies():
+    try:
+        from moviepy.editor import VideoFileClip, AudioFileClip
+        return True, None
+    except ImportError as e:
+        return False, str(e)
+
+# Check if dependencies are ready
+deps_ready, error = check_dependencies()
+
+if not deps_ready:
+    st.warning("🔄 Installing dependencies... Please wait and refresh the page in 30 seconds.")
+    st.info("This only happens on first deployment. The app will work after dependencies are installed.")
+    st.code(f"Missing: {error}")
     st.stop()
+
+# Now import everything
+from moviepy.editor import VideoFileClip, AudioFileClip
 
 # Import Deepdub client (optional)
 DEEPDUB_AVAILABLE = False
