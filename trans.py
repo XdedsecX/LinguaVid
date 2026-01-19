@@ -1,7 +1,7 @@
 import streamlit as st
 
 try:
-    from moviepy.editor import VideoFileClip
+    from moviepy import VideoFileClip
     st.success("✅ MoviePy imported successfully!")
 except ImportError as e:
     st.error(f"❌ Import failed: {e}")
