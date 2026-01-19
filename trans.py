@@ -4,8 +4,19 @@ import sys
 import tempfile
 import requests
 import time
-from moviepy.editor import VideoFileClip, AudioFileClip
-import imageio_ffmpeg
+
+# Set imageio ffmpeg path before importing moviepy
+import imageio_ffmpeg as ffmpeg
+os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg.get_ffmpeg_exe()
+
+try:
+    from moviepy.editor import VideoFileClip, AudioFileClip
+except Exception as e:
+    st.error(f"MoviePy import error: {e}")
+    st.info("Installing required dependencies...")
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "moviepy==1.0.3", "imageio==2.31.1"])
+    from moviepy.editor import VideoFileClip, AudioFileClip
 
 # Import Deepdub client
 try:
@@ -24,13 +35,19 @@ st.set_page_config(
 )
 
 # --- API Configuration ---
-DUBSMART_API_KEY = "peqf95he9tflbm1qa0io31xmx8lf5qv9"
+# Use Streamlit secrets for production, fallback to hardcoded for local testing
+try:
+    DUBSMART_API_KEY = st.secrets["DUBSMART_API_KEY"]
+    ELEVENLABS_API_KEY = st.secrets["ELEVENLABS_API_KEY"]
+    DEEPDUB_API_KEY = st.secrets["DEEPDUB_API_KEY"]
+except:
+    # Fallback for local development (remove these before deploying!)
+    DUBSMART_API_KEY = "peqf95he9tflbm1qa0io31xmx8lf5qv9"
+    ELEVENLABS_API_KEY = "cd0b84410b50c12c5cc26c396255966545f1f8a59fc57a18685acff3061c4b8c"
+    DEEPDUB_API_KEY = "dd-OUcC8QqbB8yPIzV0kkY8IDcJVbQXb8h0f6884256"
+
 DUBSMART_API_URL = "https://dubsmart.ai/api/v1"
-
-ELEVENLABS_API_KEY = "cd0b84410b50c12c5cc26c396255966545f1f8a59fc57a18685acff3061c4b8c"
 ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1"
-
-DEEPDUB_API_KEY = "dd-OUcC8QqbB8yPIzV0kkY8IDcJVbQXb8h0f6884256"
 
 # --- Language Mapping ---
 DUBSMART_LANGUAGES = {
