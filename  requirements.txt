@@ -12,3 +12,4 @@ deepdub
 faster-whisper
 deep-translator
 numpy<2.0.0
+VideoFileClip
