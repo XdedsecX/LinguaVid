@@ -232,7 +232,7 @@ def merge_audio_video(input_video, input_audio, output):
 # UI
 # --------------------------------------------------------------------
 st.title("🎙️ LinguaVid — AI Video Translator")
-st.header("Translate your videos into multiple languages using AI-powered dubbing services.") 
+st.write("Translate your videos into multiple languages using AI-powered dubbing services.") 
 st.write("Supported providers: DubSmart.ai, ElevenLabs, Deepdub GO")
 
 user ="test"
@@ -296,3 +296,4 @@ if video and st.button("Translate"):
     except Exception as e:
         st.error(f"Error: {e}")
 
+st.sidebar.write("by K,D")
