@@ -1,0 +1,7 @@
+streamlit>=1.28.0
+moviepy>=1.0.3
+requests>=2.31.0
+imageio-ffmpeg>=0.4.9
+deepdub>=0.1.0
+faster-whisper>=0.9.0
+deep-translator>=1.11.4
