@@ -237,6 +237,7 @@ st.write("Supported providers: DubSmart.ai, ElevenLabs, Deepdub GO")
 
 user ="test"
 password ="1234"
+video = None
 
 username = st.sidebar.text_input("Enter your name", "Type here...")
 userpassword = st.sidebar.text_input("Enter your password", "Type here...", type="password")
