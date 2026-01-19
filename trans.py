@@ -235,8 +235,8 @@ st.title("🎙️ LinguaVid — AI Video Translator")
 st.write("Translate your videos into multiple languages using AI-powered dubbing services.") 
 st.write("Supported providers: DubSmart.ai, ElevenLabs, Deepdub GO")
 
-user ="test"
-password ="1234"
+user ="ameed"
+password ="J8aY6Uu2wG6dteM"
 video = None
 
 username = st.sidebar.text_input("Enter your name", "Type here...")
@@ -245,7 +245,7 @@ userpassword = st.sidebar.text_input("Enter your password", "Type here...", type
 if user == username and password == userpassword:
     st.balloons()
     video = st.sidebar.file_uploader("Upload video", type=["mp4", "mov", "mkv"])
-    provider = st.sidebar.selectbox("pl Provider", ["DubSmart.ai", "ElevenLabs", "Deepdub GO"])
+    provider = st.sidebar.selectbox("please select the Provider", ["DubSmart.ai", "ElevenLabs", "Deepdub GO"])
     target = st.sidebar.selectbox("Target language", list(LANGS.keys()))
 
 if video and st.button("Translate"):
@@ -296,4 +296,4 @@ if video and st.button("Translate"):
     except Exception as e:
         st.error(f"Error: {e}")
 
-st.sidebar.write("by K,D")
+st.sidebar.write("by Khaid Idies")
