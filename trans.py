@@ -1,31 +1,43 @@
 import streamlit as st
 import os
+import sys
 import tempfile
 import requests
 import time
-import subprocess
-import json
+import ffmpeg
 
-# --- Page Configuration ---
+# --------------------------------------------------------------------
+# STREAMLIT CONFIG
+# --------------------------------------------------------------------
 st.set_page_config(
     page_title="LinguaVid - AI Video Translator",
     page_icon="🎙️",
     layout="wide"
 )
 
-# --- API Configuration ---
+# --------------------------------------------------------------------
+# API KEYS (Secrets → fallback dev)
+# --------------------------------------------------------------------
 try:
     DUBSMART_API_KEY = st.secrets["DUBSMART_API_KEY"]
     ELEVENLABS_API_KEY = st.secrets["ELEVENLABS_API_KEY"]
+    DEEPDUB_API_KEY = st.secrets["DEEPDUB_API_KEY"]
 except:
     DUBSMART_API_KEY = "peqf95he9tflbm1qa0io31xmx8lf5qv9"
     ELEVENLABS_API_KEY = "cd0b84410b50c12c5cc26c396255966545f1f8a59fc57a18685acff3061c4b8c"
+    DEEPDUB_API_KEY = "YOUR_DEEPDUB_GO_KEY"
 
+# --------------------------------------------------------------------
+# API BASE URLS
+# --------------------------------------------------------------------
 DUBSMART_API_URL = "https://dubsmart.ai/api/v1"
 ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1"
+DEEPDUB_API_URL = "https://api.deepdub.ai/go/v1"   # Deepdub GO API
 
-# --- Language Mapping ---
-DUBSMART_LANGUAGES = {
+# --------------------------------------------------------------------
+# LANG MAP
+# --------------------------------------------------------------------
+LANGS = {
     "en": "English",
     "es": "Spanish",
     "fr": "French",
@@ -33,65 +45,17 @@ DUBSMART_LANGUAGES = {
     "it": "Italian",
     "ja": "Japanese",
     "zh": "Chinese",
-    "he": "Hebrew",
     "pt": "Portuguese",
     "ru": "Russian",
     "ar": "Arabic",
     "hi": "Hindi",
-    "ko": "Korean"
-}
-
-ELEVENLABS_LANGUAGES = {
-    "en": "English",
-    "es": "Spanish",
-    "fr": "French",
-    "de": "German",
-    "it": "Italian",
-    "ja": "Japanese",
-    "zh": "Chinese (Mandarin)",
-    "pt": "Portuguese",
-    "pl": "Polish",
-    "nl": "Dutch",
-    "hi": "Hindi",
     "ko": "Korean",
-    "ar": "Arabic"
+    "he": "Hebrew"
 }
 
-# --- FFmpeg Helper Functions ---
-def extract_audio_ffmpeg(video_path: str, audio_path: str):
-    """Extract audio from video using ffmpeg"""
-    cmd = [
-        'ffmpeg', '-i', video_path,
-        '-vn', '-acodec', 'libmp3lame',
-        '-y', audio_path
-    ]
-    subprocess.run(cmd, capture_output=True, check=True)
-
-def merge_audio_video_ffmpeg(video_path: str, audio_path: str, output_path: str):
-    """Merge audio and video using ffmpeg"""
-    cmd = [
-        'ffmpeg', '-i', video_path,
-        '-i', audio_path,
-        '-c:v', 'copy',
-        '-c:a', 'aac',
-        '-map', '0:v:0', '-map', '1:a:0',
-        '-shortest',
-        '-y', output_path
-    ]
-    subprocess.run(cmd, capture_output=True, check=True)
-
-def get_video_duration(video_path: str):
-    """Get video duration using ffprobe"""
-    cmd = [
-        'ffprobe', '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_format', video_path
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    data = json.loads(result.stdout)
-    return float(data['format']['duration'])
-
-# --- DubSmart Video Translator ---
+# --------------------------------------------------------------------
+# DUBSMART TRANSLATOR
+# --------------------------------------------------------------------
 class DubSmartTranslator:
     def __init__(self, api_key):
         self.api_key = api_key
@@ -100,40 +64,27 @@ class DubSmartTranslator:
             "Content-Type": "application/json"
         }
 
-    def upload_video(self, video_path: str, status_placeholder):
-        """Upload video file to DubSmart using presigned URL"""
-        status_placeholder.write("📤 Uploading video to DubSmart.ai...")
-        
-        file_ext = os.path.splitext(video_path)[1][1:]
-        response = requests.get(
+    def upload(self, video_path, status):
+        status.write("📤 Uploading to DubSmart...")
+        ext = os.path.splitext(video_path)[1][1:]
+
+        r = requests.get(
             f"{DUBSMART_API_URL}/upload",
-            params={"region": "EU", "fileExtension": file_ext},
+            params={"region": "EU", "fileExtension": ext},
             headers=self.headers
         )
-        
-        if response.status_code != 200:
-            raise Exception(f"Failed to get upload URL: {response.text}")
-        
-        upload_data = response.json()
-        presigned_url = upload_data.get('url')
-        file_key = upload_data.get('key')
-        
-        with open(video_path, 'rb') as f:
-            upload_response = requests.put(
-                presigned_url,
-                data=f,
-                headers={'Content-Type': f'video/{file_ext}'}
-            )
-        
-        if upload_response.status_code not in [200, 204]:
-            raise Exception(f"File upload failed: {upload_response.text}")
-        
-        return file_key
+        r.raise_for_status()
+        data = r.json()
 
-    def create_dubbing_project(self, file_key: str, target_lang: str, status_placeholder):
-        """Create a dubbing project"""
-        status_placeholder.write(f"🎙️ Creating dubbing project for {target_lang}...")
-        
+        with open(video_path, "rb") as f:
+            up = requests.put(data["url"], data=f, headers={"Content-Type": f"video/{ext}"})
+            if up.status_code not in [200, 204]:
+                raise Exception(f"Upload failed: {up.text}")
+
+        return data["key"]
+
+    def create(self, file_key, lang, status):
+        status.write("🎙️ Creating DubSmart project...")
         payload = {
             "input": {
                 "path": file_key,
@@ -141,376 +92,196 @@ class DubSmartTranslator:
                 "voice": "voiceCloning",
                 "textCheck": False
             },
-            "targetLanguages": [target_lang],
-            "title": f"Video Translation - {target_lang}"
+            "targetLanguages": [lang],
+            "title": f"Video → {lang}"
         }
-        
-        response = requests.post(
-            f"{DUBSMART_API_URL}/project",
-            headers=self.headers,
-            json=payload
-        )
-        
-        if response.status_code in [200, 201]:
-            project_data = response.json()
-            return project_data.get('id')
-        else:
-            raise Exception(f"Project creation failed: {response.text}")
+        r = requests.post(f"{DUBSMART_API_URL}/project", headers=self.headers, json=payload)
+        r.raise_for_status()
+        return r.json()["id"]
 
-    def check_project_status(self, project_id: str, status_placeholder):
-        """Poll project status until completion"""
-        status_placeholder.write("⏳ Processing dubbing (this may take a few minutes)...")
-        
-        max_attempts = 120
-        attempt = 0
-        
-        while attempt < max_attempts:
-            try:
-                response = requests.get(
-                    f"{DUBSMART_API_URL}/project/{project_id}",
-                    headers=self.headers
-                )
-                
-                if response.status_code == 200:
-                    project_data = response.json()
-                    base_state = project_data.get('base', {}).get('state', 'unknown')
-                    stage = project_data.get('stage', 'unknown')
-                    progress = project_data.get('base', {}).get('progress', 0)
-                    
-                    status_placeholder.write(f"⏳ State: {base_state} | Stage: {stage} | Progress: {progress}%")
-                    
-                    if base_state.lower() in ['done', 'completed', 'finished']:
-                        status_placeholder.write("✅ Dubbing completed!")
-                        
-                        video_result = project_data.get('videoResult')
-                        if video_result and video_result.get('value'):
-                            return video_result.get('value'), 'video'
-                        
-                        segments = project_data.get('segments', [])
-                        if segments and len(segments) > 0:
-                            audio_url = segments[0].get('resultUrl')
-                            if audio_url:
-                                return audio_url, 'audio'
-                        
-                        audio_path = project_data.get('audioPath')
-                        if audio_path:
-                            return audio_path, 'audio'
-                        
-                        raise Exception(f"Project completed but no output found.")
-                    
-                    elif base_state.lower() in ['failed', 'error', 'cancelled']:
-                        error = project_data.get('base', {}).get('error', 'Unknown error')
-                        raise Exception(f"Dubbing failed: {error}")
-                    
-                    time.sleep(5)
-                    
-            except requests.exceptions.RequestException as e:
-                st.warning(f"Network error: {str(e)}")
-                time.sleep(5)
-            
-            attempt += 1
-        
-        raise Exception(f"Project timeout")
+    def poll(self, pid, status):
+        status.write("⏳ Processing (DubSmart)...")
+        for _ in range(360):
+            r = requests.get(f"{DUBSMART_API_URL}/project/{pid}", headers=self.headers)
+            r.raise_for_status()
+            d = r.json()
 
-    def download_file(self, url: str, save_path: str, status_placeholder):
-        """Download file from URL"""
-        status_placeholder.write("📥 Downloading output...")
-        
-        response = requests.get(url, stream=True)
-        
-        if response.status_code == 200:
-            with open(save_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return save_path
-        else:
-            raise Exception(f"Download failed: {response.text}")
+            s = d.get("base", {}).get("state", "")
+            status.write(f"State: {s}")
 
-    def process_video(self, video_path: str, target_lang: str, output_path: str, status_placeholder):
-        """Full pipeline using ffmpeg"""
+            if s.lower() in ["done", "completed"]:
+                vr = d.get("videoResult")
+                if vr and vr.get("value"):
+                    return vr["value"], "video"
 
-        file_key = self.upload_video(video_path, status_placeholder)
-        project_id = self.create_dubbing_project(file_key, target_lang, status_placeholder)
-        status_placeholder.write(f"✅ Project created! ID: {project_id}")
+                seg = d.get("segments", [])
+                if seg and seg[0].get("resultUrl"):
+                    return seg[0]["resultUrl"], "audio"
+                raise Exception("Completed but no asset.")
 
-        output_url, output_type = self.check_project_status(project_id, status_placeholder)
+            if s.lower() in ["failed", "error"]:
+                raise Exception("DubSmart failed.")
 
-        if output_type == 'video':
-            status_placeholder.write("📥 Downloading complete dubbed video...")
-            self.download_file(output_url, output_path, status_placeholder)
-            status_placeholder.write("✅ Downloaded dubbed video from DubSmart!")
-        else:
-            dubbed_audio_path = os.path.join(tempfile.gettempdir(), "dubbed_audio.mp3")
-            self.download_file(output_url, dubbed_audio_path, status_placeholder)
+            time.sleep(5)
 
-            status_placeholder.write("🎬 Merging dubbed audio with video using ffmpeg...")
-            try:
-                merge_audio_video_ffmpeg(video_path, dubbed_audio_path, output_path)
-                status_placeholder.write("✅ Video merged successfully!")
-            except Exception as e:
-                raise Exception(f"FFmpeg merge failed: {str(e)}")
-            
-            if os.path.exists(dubbed_audio_path):
-                try:
-                    os.remove(dubbed_audio_path)
-                except:
-                    pass
+        raise Exception("DubSmart timeout")
 
+    def download(self, url, out, status):
+        status.write("📥 Downloading DubSmart asset...")
+        r = requests.get(url, stream=True)
+        r.raise_for_status()
+        with open(out, "wb") as f:
+            for c in r.iter_content(8192):
+                f.write(c)
+        return out
 
-# --- ElevenLabs Video Translator ---
+# --------------------------------------------------------------------
+# ELEVENLABS TRANSLATOR
+# --------------------------------------------------------------------
 class ElevenLabsTranslator:
     def __init__(self, api_key):
-        self.api_key = api_key
         self.headers = {"xi-api-key": api_key}
 
-    def create_dubbing(self, video_path: str, target_lang: str, status_placeholder, watermark: bool = True):
-        """Create a dubbing project with ElevenLabs"""
-        status_placeholder.write("📤 Uploading video to ElevenLabs...")
-        
-        with open(video_path, 'rb') as f:
-            files = {'file': (os.path.basename(video_path), f, 'video/mp4')}
-            data = {
-                'target_lang': target_lang,
-                'mode': 'automatic',
-                'source_lang': 'auto',
-                'watermark': 'true' if watermark else 'false'
-            }
-            
-            response = requests.post(
-                f"{ELEVENLABS_API_URL}/dubbing",
-                headers=self.headers,
-                files=files,
-                data=data
-            )
-        
-        if response.status_code in [200, 201]:
-            result = response.json()
-            return result.get('dubbing_id')
-        else:
-            raise Exception(f"ElevenLabs upload failed: {response.text}")
+    def create(self, video_path, lang, status):
+        status.write("📤 Uploading to ElevenLabs...")
+        with open(video_path, "rb") as f:
+            files = {"file": (os.path.basename(video_path), f, "video/mp4")}
+            data = {"target_lang": lang, "mode": "automatic", "source_lang": "auto"}
+            r = requests.post(f"{ELEVENLABS_API_URL}/dubbing", headers=self.headers, files=files, data=data)
+        r.raise_for_status()
+        return r.json()["dubbing_id"]
 
-    def check_dubbing_status(self, dubbing_id: str, status_placeholder):
-        """Poll dubbing status until completion"""
-        status_placeholder.write("⏳ Processing with ElevenLabs...")
-        
-        max_attempts = 120
-        attempt = 0
-        
-        while attempt < max_attempts:
-            try:
-                response = requests.get(
-                    f"{ELEVENLABS_API_URL}/dubbing/{dubbing_id}",
-                    headers=self.headers
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    status = data.get('status', 'unknown')
-                    
-                    status_placeholder.write(f"⏳ ElevenLabs Status: {status}")
-                    
-                    if status == 'dubbed':
-                        status_placeholder.write("✅ ElevenLabs dubbing completed!")
-                        return dubbing_id
-                    elif status in ['failed', 'error']:
-                        error = data.get('error', 'Unknown error')
-                        raise Exception(f"ElevenLabs dubbing failed: {error}")
-                    
-                    time.sleep(5)
-                    
-            except requests.exceptions.RequestException as e:
-                st.warning(f"Network error: {str(e)}")
-                time.sleep(5)
-            
-            attempt += 1
-        
+    def poll(self, did, status):
+        status.write("⏳ Processing (ElevenLabs)...")
+        for _ in range(360):
+            r = requests.get(f"{ELEVENLABS_API_URL}/dubbing/{did}", headers=self.headers)
+            r.raise_for_status()
+            d = r.json()
+            s = d.get("status", "")
+            status.write(f"Status: {s}")
+            if s == "dubbed":
+                return did
+            if s in ["error", "failed"]:
+                raise Exception("ElevenLabs failed.")
+            time.sleep(5)
         raise Exception("ElevenLabs timeout")
 
-    def download_dubbed_file(self, dubbing_id: str, target_lang: str, output_path: str, status_placeholder):
-        """Download the dubbed audio"""
-        status_placeholder.write("📥 Downloading dubbed audio from ElevenLabs...")
-        
-        response = requests.get(
-            f"{ELEVENLABS_API_URL}/dubbing/{dubbing_id}/audio/{target_lang}",
-            headers=self.headers,
-            stream=True
-        )
-        
-        if response.status_code == 200:
-            with open(output_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return output_path
-        else:
-            raise Exception(f"Download failed: {response.text}")
+    def download_audio(self, did, lang, out, status):
+        status.write("📥 Downloading EL audio...")
+        r = requests.get(f"{ELEVENLABS_API_URL}/dubbing/{did}/audio/{lang}", headers=self.headers, stream=True)
+        r.raise_for_status()
+        with open(out, "wb") as f:
+            for c in r.iter_content(8192):
+                f.write(c)
+        return out
 
-    def process_video(self, video_path: str, target_lang: str, output_path: str, status_placeholder, watermark: bool = True):
-        """Full pipeline using ffmpeg"""
-        
-        dubbing_id = self.create_dubbing(video_path, target_lang, status_placeholder, watermark)
-        status_placeholder.write(f"✅ Dubbing created! ID: {dubbing_id}")
-        
-        self.check_dubbing_status(dubbing_id, status_placeholder)
-        
-        dubbed_audio_path = os.path.join(tempfile.gettempdir(), "elevenlabs_audio.mp3")
-        self.download_dubbed_file(dubbing_id, target_lang, dubbed_audio_path, status_placeholder)
-        
-        status_placeholder.write("🎬 Merging dubbed audio with video using ffmpeg...")
-        try:
-            merge_audio_video_ffmpeg(video_path, dubbed_audio_path, output_path)
-            status_placeholder.write("✅ Video merged successfully!")
-        except Exception as e:
-            raise Exception(f"FFmpeg merge failed: {str(e)}")
-        
-        if os.path.exists(dubbed_audio_path):
-            try:
-                os.remove(dubbed_audio_path)
-            except:
-                pass
+# --------------------------------------------------------------------
+# DEEPDUB GO TRANSLATOR
+# --------------------------------------------------------------------
+class DeepDubGoTranslator:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.headers = {
+            "Authorization": f"Bearer {api_key}"
+        }
 
+    def send(self, video_path, lang, status):
+        status.write("📤 Uploading to Deepdub GO...")
+        with open(video_path, "rb") as f:
+            files = {"file": (os.path.basename(video_path), f, "video/mp4")}
+            data = {"target_language": lang, "source_language": "auto"}
+            r = requests.post(f"{DEEPDUB_API_URL}/dub", headers=self.headers, files=files, data=data)
+        r.raise_for_status()
+        return r.json()["id"]
 
-# --- Main App ---
-def main():
-    st.title("🎙️ LinguaVid: Universal Video Translator")
-    st.markdown("Translate and dub videos using **DubSmart.ai** or **ElevenLabs.io**")
+    def poll(self, rid, status):
+        status.write("⏳ Processing (Deepdub GO)...")
+        for _ in range(360):
+            r = requests.get(f"{DEEPDUB_API_URL}/dub/{rid}", headers=self.headers)
+            r.raise_for_status()
+            d = r.json()
+            s = d.get("status", "")
+            status.write(f"Status: {s}")
+            if s == "completed":
+                return d.get("audio_url")
+            if s in ["error", "failed"]:
+                raise Exception("Deepdub failed.")
+            time.sleep(5)
+        raise Exception("Deepdub timeout")
 
-    # Sidebar Settings
-    st.sidebar.header("⚙️ Translation Settings")
-    
-    service = st.sidebar.radio(
-        "Select Dubbing Service",
-        options=["DubSmart.ai", "ElevenLabs.io"],
-        index=0,
-        help="Choose which AI service to use for dubbing"
+# --------------------------------------------------------------------
+# FFMPEG MERGE
+# --------------------------------------------------------------------
+def merge_audio_video(input_video, input_audio, output):
+    video_stream = ffmpeg.input(input_video)
+    audio_stream = ffmpeg.input(input_audio)
+
+    out = ffmpeg.output(
+        video_stream.video,
+        audio_stream.audio,
+        output,
+        vcodec="libx264",
+        acodec="aac",
+        shortest=None,
+        strict="-2"
     )
-    
-    if service == "DubSmart.ai":
-        available_langs = DUBSMART_LANGUAGES
-        st.sidebar.info("🚀 DubSmart.ai - Voice cloning & professional dubbing")
-    else:
-        available_langs = ELEVENLABS_LANGUAGES
-        st.sidebar.info("🎵 ElevenLabs.io - High-quality AI voices")
-        
-        watermark = st.sidebar.checkbox(
-            "Add ElevenLabs Watermark",
-            value=True,
-            help="Free tier requires watermark."
-        )
-        if watermark:
-            st.sidebar.warning("⚠️ Video will have ElevenLabs watermark (free tier)")
-        else:
-            st.sidebar.success("✅ No watermark (requires Creator+ subscription)")
-    
-    target_lang = st.sidebar.selectbox(
-        "Target Language",
-        options=list(available_langs.keys()),
-        index=0,
-        format_func=lambda x: available_langs.get(x, x)
-    )
+    ffmpeg.run(out, overwrite_output=True)
+    return output
 
-    with st.sidebar.expander("📊 Service Comparison"):
-        st.markdown("""
-        **DubSmart.ai:**
-        - ✅ Voice cloning
-        - ✅ Automatic translation
-        - ⚡ Faster processing
-        
-        **ElevenLabs.io:**
-        - ✅ Premium AI voices
-        - ✅ Natural speech
-        - 🎯 Best quality
-        """)
+# --------------------------------------------------------------------
+# UI
+# --------------------------------------------------------------------
+st.title("🎙️ LinguaVid — AI Video Translator")
 
-    uploaded_file = st.file_uploader(
-        "Upload video (MP4, MOV, AVI)",
-        type=["mp4", "mov", "avi"]
-    )
+video = st.file_uploader("Upload video", type=["mp4", "mov", "mkv"])
+provider = st.selectbox("Provider", ["DubSmart.ai", "ElevenLabs", "Deepdub GO"])
+target = st.selectbox("Target language", list(LANGS.keys()))
 
-    if uploaded_file:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📹 Original Video")
-            st.video(uploaded_file)
+if video and st.button("Translate"):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        tmp.write(video.read())
+        video_path = tmp.name
 
-        if st.button("🚀 Start Translation & Dubbing", type="primary"):
-            input_path = os.path.join(tempfile.gettempdir(), uploaded_file.name)
-            with open(input_path, "wb") as f:
-                f.write(uploaded_file.read())
+    status = st.empty()
 
-            output_path = os.path.join(
-                tempfile.gettempdir(),
-                f"dubbed_{uploaded_file.name}"
-            )
+    out_path = os.path.join(tempfile.gettempdir(), "output.mp4")
+    audio_tmp = os.path.join(tempfile.gettempdir(), "dub_audio.mp3")
 
-            try:
-                status_box = st.empty()
-                progress_bar = st.progress(0)
-                
-                st.info(f"💡 Processing with **{service}**. This may take 2-5 minutes...")
-                
-                if service == "DubSmart.ai":
-                    translator = DubSmartTranslator(api_key=DUBSMART_API_KEY)
-                    translator.process_video(
-                        video_path=input_path,
-                        target_lang=target_lang,
-                        output_path=output_path,
-                        status_placeholder=status_box
-                    )
-                else:
-                    translator = ElevenLabsTranslator(api_key=ELEVENLABS_API_KEY)
-                    translator.process_video(
-                        video_path=input_path,
-                        target_lang=target_lang,
-                        output_path=output_path,
-                        status_placeholder=status_box,
-                        watermark=watermark
-                    )
+    try:
+        if provider == "DubSmart.ai":
+            d = DubSmartTranslator(DUBSMART_API_KEY)
+            fk = d.upload(video_path, status)
+            pid = d.create(fk, target, status)
+            url, typ = d.poll(pid, status)
 
-                progress_bar.progress(100)
-                status_box.success(f"✅ Translation Complete with {service}!")
+            if typ == "video":
+                d.download(url, out_path, status)
+            else:
+                d.download(url, audio_tmp, status)
+                merge_audio_video(video_path, audio_tmp, out_path)
 
-                with col2:
-                    st.subheader("🎬 Dubbed Video")
-                    st.video(output_path)
-                    
-                    with open(output_path, "rb") as file:
-                        st.download_button(
-                            label="📥 Download Dubbed Video",
-                            data=file,
-                            file_name=f"dubbed_{uploaded_file.name}",
-                            mime="video/mp4"
-                        )
+        elif provider == "ElevenLabs":
+            e = ElevenLabsTranslator(ELEVENLABS_API_KEY)
+            did = e.create(video_path, target, status)
+            e.poll(did, status)
+            e.download_audio(did, target, audio_tmp, status)
+            merge_audio_video(video_path, audio_tmp, out_path)
 
-            except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
-                st.info(f"Please check your {service} API key and internet connection.")
+        else:  # Deepdub GO
+            g = DeepDubGoTranslator(DEEPDUB_API_KEY)
+            rid = g.send(video_path, target, status)
+            url = g.poll(rid, status)
 
-            finally:
-                for f in [input_path, output_path]:
-                    if os.path.exists(f):
-                        try:
-                            os.remove(f)
-                        except:
-                            pass
-    else:
-        st.info("📹 Upload a video to start the translation and dubbing process.")
-        
-        st.markdown("### ✨ Features")
-        col_a, col_b, col_c = st.columns(3)
-        
-        with col_a:
-            st.markdown("**🎯 Two Services**")
-            st.write("DubSmart & ElevenLabs")
-        
-        with col_b:
-            st.markdown("**🌍 Multi-Language**")
-            st.write("Support for 10+ languages")
-        
-        with col_c:
-            st.markdown("**⚡ Cloud-Optimized**")
-            st.write("Uses FFmpeg directly")
+            r = requests.get(url)
+            r.raise_for_status()
+            with open(audio_tmp, "wb") as f:
+                f.write(r.content)
 
+            merge_audio_video(video_path, audio_tmp, out_path)
 
-if __name__ == "__main__":
-    main()
+        status.write("✅ Done!")
+        st.video(out_path)
+
+    except Exception as e:
+        st.error(f"Error: {e}")
+
