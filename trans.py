@@ -9,7 +9,7 @@ import time
 @st.cache_resource
 def check_dependencies():
     try:
-        from moviepy.editor import VideoFileClip, AudioFileClip
+        from moviepy import VideoFileClip, AudioFileClip
         return True, None
     except ImportError as e:
         return False, str(e)
@@ -24,7 +24,7 @@ if not deps_ready:
     st.stop()
 
 # Now import everything
-from moviepy.editor import VideoFileClip, AudioFileClip
+from moviepy import VideoFileClip, AudioFileClip
 
 # Import Deepdub client (optional)
 DEEPDUB_AVAILABLE = False
