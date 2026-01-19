@@ -5,27 +5,20 @@ import tempfile
 import requests
 import time
 
-# Set imageio ffmpeg path before importing moviepy
-import imageio_ffmpeg as ffmpeg
-os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg.get_ffmpeg_exe()
-
+# Simplified imports - let Streamlit handle dependencies
 try:
     from moviepy.editor import VideoFileClip, AudioFileClip
-except Exception as e:
-    st.error(f"MoviePy import error: {e}")
-    st.info("Installing required dependencies...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "moviepy==1.0.3", "imageio==2.31.1"])
-    from moviepy.editor import VideoFileClip, AudioFileClip
+except ImportError as e:
+    st.error(f"Please wait, installing dependencies... Error: {e}")
+    st.stop()
 
-# Import Deepdub client
+# Import Deepdub client (optional)
+DEEPDUB_AVAILABLE = False
 try:
     from deepdub import DeepdubClient
+    DEEPDUB_AVAILABLE = True
 except ImportError:
-    st.warning("Installing Deepdub library...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "deepdub"])
-    from deepdub import DeepdubClient
+    pass  # Deepdub is optional
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -575,9 +568,13 @@ def main():
     st.sidebar.header("⚙️ Translation Settings")
     
     # Service Selection
+    available_services = ["DubSmart.ai", "ElevenLabs.io"]
+    if DEEPDUB_AVAILABLE:
+        available_services.append("Deepdub.ai")
+    
     service = st.sidebar.radio(
         "Select Dubbing Service",
-        options=["DubSmart.ai", "ElevenLabs.io", "Deepdub.ai"],
+        options=available_services,
         index=0,
         help="Choose which AI service to use for dubbing"
     )
