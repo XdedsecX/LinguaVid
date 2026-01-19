@@ -232,10 +232,20 @@ def merge_audio_video(input_video, input_audio, output):
 # UI
 # --------------------------------------------------------------------
 st.title("🎙️ LinguaVid — AI Video Translator")
+st.header("Translate your videos into multiple languages using AI-powered dubbing services.") 
+st.write("Supported providers: DubSmart.ai, ElevenLabs, Deepdub GO")
 
-video = st.file_uploader("Upload video", type=["mp4", "mov", "mkv"])
-provider = st.selectbox("Provider", ["DubSmart.ai", "ElevenLabs", "Deepdub GO"])
-target = st.selectbox("Target language", list(LANGS.keys()))
+user ="test"
+password ="1234"
+
+username = st.sidebar.text_input("Enter your name", "Type here...")
+userpassword = st.sidebar.text_input("Enter your password", "Type here...", type="password")
+
+if user == username and password == userpassword:
+    st.balloons()
+    video = st.sidebar.file_uploader("Upload video", type=["mp4", "mov", "mkv"])
+    provider = st.sidebar.selectbox("pl Provider", ["DubSmart.ai", "ElevenLabs", "Deepdub GO"])
+    target = st.sidebar.selectbox("Target language", list(LANGS.keys()))
 
 if video and st.button("Translate"):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
